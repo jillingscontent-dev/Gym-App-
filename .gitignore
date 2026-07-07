@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.vercel/
+
+.env
+.env.*
+!.env.example
+
+# Local browser configuration may contain the project's public Supabase values.
+config.js
+.vercel
+
+.DS_Store
