@@ -279,6 +279,14 @@ export async function finishRemoteWorkout(sessionId, duration, volume) {
   fail(error);
 }
 
+export async function updateWorkoutSessionDetails(sessionId, duration, volume) {
+  const { error } = await supabase.from("workout_sessions").update({
+    duration_minutes: duration,
+    total_volume_kg: volume,
+  }).eq("id", sessionId);
+  fail(error);
+}
+
 export async function cancelRemoteWorkout(sessionId) {
   const { error } = await supabase.from("workout_sessions").delete().eq("id", sessionId);
   fail(error);

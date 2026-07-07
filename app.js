@@ -21,6 +21,7 @@ import {
   updateRemoteExerciseDetails,
   deleteRemoteSet,
   finishRemoteWorkout,
+  updateWorkoutSessionDetails,
   cancelRemoteWorkout,
   deleteWorkoutSession,
 } from "./supabase-client.js";
@@ -665,7 +666,15 @@ function renderModal() {
   if (state.modal === "history") {
     const h = state.history.find(x=>x.id===state.selectedWorkoutId);
     if (!h) return "";
-    return `<div class="modal-backdrop" data-modal-backdrop><div class="modal" role="dialog" aria-modal="true" aria-labelledby="workout-details-title"><div class="section-head"><div><p class="eyebrow">${fmtDate(h.date)}</p><h2 id="workout-details-title">${esc(h.workout)} Session</h2></div><button class="icon-btn" data-action="close-modal" data-modal-primary-focus aria-label="Close workout details">×</button></div><div class="meta-row"><span>${h.duration} min</span><span>${weightLabel(h.volume)}</span></div><div class="stack section">${(h.exercises||[]).map(ex=>`<div class="card compact"><strong>${esc(ex.name)}</strong><div class="caption">${(ex.sets||[]).map(s=>`${weightLabel(s.weight)} × ${s.reps}`).join(" · ") || "No weighted sets"}</div></div>`).join("")}</div><div class="modal-actions modal-actions-split"><button class="btn danger" data-action="delete-workout">Delete workout</button><button class="btn" data-action="close-modal">Close</button></div></div></div>`;
+    return `<div class="modal-backdrop" data-modal-backdrop><div class="modal" role="dialog" aria-modal="true" aria-labelledby="workout-details-title"><div class="section-head"><div><p class="eyebrow">${fmtDate(h.date)}</p><h2 id="workout-details-title">${esc(h.workout)} Session</h2></div><button class="icon-btn" data-action="close-modal" data-modal-primary-focus aria-label="Close workout details">×</button></div><div class="meta-row"><span>${h.duration} min</span><span>${weightLabel(h.volume)}</span></div><div class="stack section">${(h.exercises||[]).map(ex=>`<div class="card compact"><strong>${esc(ex.name)}</strong><div class="caption">${(ex.sets||[]).map(s=>`${weightLabel(s.weight)} × ${s.reps}`).join(" · ") || "No weighted sets"}</div></div>`).join("")}</div><div class="modal-actions modal-actions-split"><button class="btn danger" data-action="delete-workout">Delete workout</button><div class="modal-actions" style="margin:0"><button class="btn" data-action="edit-workout">Edit</button><button class="btn" data-action="close-modal">Close</button></div></div></div></div>`;
+  }
+  if (state.modal === "history-edit") {
+    const h = state.history.find(x=>x.id===state.selectedWorkoutId);
+    if (!h) return "";
+    return `<div class="modal-backdrop" data-modal-backdrop><form class="modal" id="history-edit-form" role="dialog" aria-modal="true" aria-labelledby="history-edit-title"><div class="section-head"><div><p class="eyebrow">${fmtDate(h.date)}</p><h2 id="history-edit-title">Edit ${esc(h.workout)} Session</h2></div><button type="button" class="icon-btn" data-action="back-to-history" data-modal-primary-focus aria-label="Close workout editor">×</button></div>
+      <div class="form-grid"><label>Duration (minutes)<input name="duration" type="number" min="1" max="1440" step="1" value="${h.duration}" required></label></div>
+      <div class="stack section">${(h.exercises||[]).map((ex,ei)=>`<div class="card compact"><strong>${esc(ex.name)}</strong><div class="sets-head"><span>Set</span><span>Load (${state.settings.units})</span><span>Reps</span><span></span></div>${(ex.sets||[]).map((s,si)=>`<div class="set-row"><span class="set-num">${si+1}</span><input class="set-input" type="number" inputmode="decimal" min="0" max="5000" step="any" name="weight-${ei}-${si}" value="${Math.round(unitWeight(s.weight)*10)/10}" aria-label="${esc(ex.name)} set ${si+1} load"><input class="set-input" type="number" inputmode="decimal" min="0" max="1000" step="any" name="reps-${ei}-${si}" value="${s.reps}" aria-label="${esc(ex.name)} set ${si+1} reps"><span></span></div>`).join("")}</div>`).join("")}</div>
+      <div class="modal-actions"><button type="button" class="btn" data-action="back-to-history">Cancel</button><button class="btn primary" type="submit">Save changes</button></div></form></div>`;
   }
   return "";
 }
@@ -751,6 +760,8 @@ app.addEventListener("click", async event => {
   if (action === "sign-out") { restTimer.dismiss(); await signOut(); return; }
   if (action === "toggle-auth") { state.authMode = state.authMode === "signin" ? "signup" : "signin"; render(); return; }
   if (action === "reset-data") { if(confirm("Reset all app data and restore the demo history?")){restTimer.dismiss();localStorage.removeItem(STORE);location.reload();} return; }
+  if (action === "edit-workout") { state.modal = "history-edit"; render(); return; }
+  if (action === "back-to-history") { state.modal = "history"; render(); return; }
   if (action === "delete-workout") {
     const id = state.selectedWorkoutId;
     const workout = state.history.find(item => item.id === id);
@@ -909,6 +920,36 @@ app.addEventListener("submit", async event => {
     } catch(error) { showToast(error.message||"Exercise could not be saved"); }
     return;
   }
+  if (event.target.id === "history-edit-form") {
+    event.preventDefault();
+    const h = state.history.find(x=>x.id===state.selectedWorkoutId);
+    if (!h) { closeModal(); return; }
+    const data = new FormData(event.target);
+    const duration = Math.round(Number(data.get("duration")));
+    if (!Number.isFinite(duration) || duration < 1 || duration > 1440) { showToast("Enter a duration from 1 to 1,440 minutes."); return; }
+    const changedSets = [];
+    const exercises = (h.exercises||[]).map((ex,ei) => ({...ex, sets: (ex.sets||[]).map((set,si) => {
+      const weightInput = event.target.elements[`weight-${ei}-${si}`];
+      const repsInput = event.target.elements[`reps-${ei}-${si}`];
+      const weight = weightInput.value === weightInput.defaultValue ? set.weight : Math.round(fromUnit(Number(weightInput.value) || 0) * 100) / 100;
+      const reps = repsInput.value === repsInput.defaultValue ? set.reps : Number(repsInput.value) || 0;
+      if (set.id && (weight !== set.weight || reps !== set.reps)) changedSets.push({id:set.id, patch:{weight_kg:weight, reps}});
+      return {...set, weight, reps};
+    })}));
+    const volume = exercises.reduce((sum,ex)=>sum+ex.sets.reduce((s,set)=>s+set.weight*set.reps,0),0);
+    try {
+      if (isSupabaseConfigured) {
+        for (const set of changedSets) await updateRemoteSet(set.id, set.patch);
+        await updateWorkoutSessionDetails(h.id, duration, volume);
+      }
+      Object.assign(h, {duration, volume, exercises});
+      persist();
+      state.modal = "history";
+      render();
+      showToast(isSupabaseConfigured ? "Workout updated and synced" : "Workout updated");
+    } catch(error) { showToast(error.message || "Workout could not be updated"); }
+    return;
+  }
   if (event.target.id === "auth-form") {
     event.preventDefault();
     const data = new FormData(event.target);
@@ -942,7 +983,7 @@ async function finishWorkout() {
   if (!active) return;
   const completed = active.exercises.flatMap(ex=>ex.sets).filter(s=>s.done || (s.weight && s.reps));
   if (!completed.length) { showToast("Log at least one set before finishing"); return; }
-  const exercises = active.exercises.map(ex => ({name:ex.name, phase:ex.phase, notes:ex.notes, sets:ex.sets.filter(s=>s.weight||s.reps).map(s=>({weight:fromUnit(Number(s.weight)||0),reps:Number(s.reps)||0,done:s.done}))})).filter(ex=>ex.sets.length);
+  const exercises = active.exercises.map(ex => ({id:ex.id, name:ex.name, phase:ex.phase, notes:ex.notes, sets:ex.sets.filter(s=>s.weight||s.reps).map(s=>({id:s.id,weight:fromUnit(Number(s.weight)||0),reps:Number(s.reps)||0,done:s.done}))})).filter(ex=>ex.sets.length);
   const volume = exercises.reduce((sum,ex)=>sum+ex.sets.reduce((s,set)=>s+set.weight*set.reps,0),0);
   const duration = Math.max(1, Math.round((Date.now()-active.startedAt)/60000));
   state.workoutSaveStatus = "saving";
