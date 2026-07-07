@@ -5,7 +5,7 @@ Responsive fitness tracker based on the supplied Google Stitch “Natural Minima
 ## Connect Supabase
 
 1. Create a Supabase project.
-2. Open **SQL Editor**, run [`supabase/schema.sql`](supabase/schema.sql), then run [`supabase/migrations/002_default_programs.sql`](supabase/migrations/002_default_programs.sql).
+2. Open **SQL Editor**, run [`supabase/schema.sql`](supabase/schema.sql), then run each file in [`supabase/migrations/`](supabase/migrations) in order (002 default programs, 003 food logs).
 3. In **Project Settings → API**, copy the project URL and the public publishable/anon key.
 4. Add those two public values to [`config.js`](config.js). Never use a service-role key in frontend code.
 5. In **Authentication → URL Configuration**, add your local and deployed site URLs as allowed redirect URLs.
