@@ -274,8 +274,16 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .macro-columns label { min-width: 0; }
 .macro-columns input { width: 100%; min-width: 0; }
 .food-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.food-row > div:not(.food-row-right) { flex: 1; min-width: 0; }
 .food-row-right { display: flex; align-items: center; gap: 12px; }
 .food-row-right .metric { font-size: 20px; }
+.food-thumb { width: 46px; height: 46px; border-radius: 10px; object-fit: cover; background: var(--surface-2); flex-shrink: 0; }
+.slot-pills { display: flex; gap: 6px; margin-top: 12px; }
+.slot-pill { width: 27px; height: 27px; border-radius: 50%; border: 1px solid var(--line); display: grid; place-items: center; font-size: 12px; color: var(--muted); }
+.slot-pill.filled { background: var(--bamboo); border-color: var(--bamboo); color: #fff; }
+.split-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-width: 0; }
+.split-columns label, .split-columns input, .split-columns select { min-width: 0; }
+.photo-field input[type="file"] { border: 1px dashed var(--line); border-radius: 9px; padding: 11px 12px; background: white; font-size: 13px; color: var(--muted); height: auto; }
 .record-row { display: grid; grid-template-columns: 48px 1fr auto; gap: 14px; align-items: center; }
 .record-icon { width: 48px; height: 48px; border-radius: 11px; display: grid; place-items: center; background: var(--surface-2); color: var(--bamboo-dark); }
 

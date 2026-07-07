@@ -27,6 +27,9 @@ import {
   loadFoodLogs,
   insertFoodLog,
   deleteFoodLog,
+  uploadMealPhoto,
+  getMealPhotoUrl,
+  deleteMealPhoto,
 } from "./supabase-client.js";
 import { isMissingProgramSchemaError } from "./program-schema-error.js";
 import { REST_PRESETS, RestTimer, completeSetAndMaybeStartTimer, formatRestTime, validateRestDuration } from "./rest-timer.js";
@@ -343,7 +346,34 @@ function foodRowToEntry(row) {
     protein: row.protein_g == null ? null : Number(row.protein_g),
     carbs: row.carbs_g == null ? null : Number(row.carbs_g),
     fat: row.fat_g == null ? null : Number(row.fat_g),
+    slot: row.meal_slot == null ? null : Number(row.meal_slot),
+    time: row.eaten_time ? String(row.eaten_time).slice(0, 5) : null,
+    photoPath: row.photo_path || null,
   };
+}
+
+async function compressMealPhoto(file, maxDim = 1280) {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.82));
+    return blob || file;
+  } catch { return file; }
+}
+
+const mealPhotoUrls = new Map();
+function hydrateMealPhotos() {
+  if (!isSupabaseConfigured) return;
+  document.querySelectorAll("[data-meal-photo]").forEach(img => {
+    const path = img.dataset.mealPhoto;
+    if (!mealPhotoUrls.has(path)) mealPhotoUrls.set(path, getMealPhotoUrl(path).catch(() => null));
+    mealPhotoUrls.get(path).then(url => { if (url && img.isConnected) img.src = url; });
+  });
 }
 
 async function ensureFoodLoaded() {
@@ -355,7 +385,7 @@ async function ensureFoodLoaded() {
     state.foodError = null;
   } catch (error) {
     state.foodError = isMissingProgramSchemaError(error)
-      ? "The food log table is missing. Run supabase/migrations/003_food_logs.sql once in the Supabase SQL Editor to enable calorie tracking."
+      ? "The food log database objects are missing or out of date. Run supabase/migrations/003_food_logs.sql and 004_meal_slots_photos.sql once in the Supabase SQL Editor."
       : (error.message || "Your food log could not be loaded.");
   }
   if (state.view === "food") render();
@@ -647,6 +677,8 @@ function renderFood() {
   const entries = state.food.filter(e => e.date === date);
   const totals = entries.reduce((t,e)=>({cal:t.cal+e.calories, p:t.p+(e.protein||0), c:t.c+(e.carbs||0), f:t.f+(e.fat||0)}), {cal:0,p:0,c:0,f:0});
   const hasMacros = totals.p || totals.c || totals.f;
+  const filledSlots = new Set(entries.map(e => e.slot).filter(Boolean));
+  const nextSlot = Array.from({length:6},(_,i)=>i+1).find(n => !filledSlots.has(n)) || 6;
   const days = Array.from({length:7}, (_,i) => { const d = new Date(); d.setDate(d.getDate()-(6-i)); return localDate(d); });
   const series = days.map(d => state.food.filter(e => e.date === d).reduce((s,e) => s+e.calories, 0));
   const weekTotal = series.reduce((a,b)=>a+b,0);
@@ -654,11 +686,12 @@ function renderFood() {
     <div class="section-head"><h1 class="page-title">Nutrition</h1><div class="date-stepper"><button class="icon-btn" data-food-day="-1" aria-label="Previous day">${icon("back")}</button><strong>${isToday ? "Today" : fmtDate(date+"T12:00:00")}</strong><button class="icon-btn" data-food-day="1" aria-label="Next day" ${isToday?"disabled":""}>${icon("chevron")}</button></div></div>
     ${state.foodError ? `<section class="section card connection-card"><span class="tag power">Setup</span><div><strong>Food log database setup required</strong><p>${esc(state.foodError)}</p></div></section>` : ""}
     <section class="stats-grid">
-      <article class="card stat-card"><span class="label">${isToday ? "Today" : "Day"} total</span><strong>${fmtNum(totals.cal)} kcal</strong><small>${entries.length} ${entries.length===1?"meal":"meals"} logged</small></article>
+      <article class="card stat-card"><span class="label">Meals</span><strong>${filledSlots.size}/6</strong><small>${filledSlots.size >= 6 ? "All feedings logged — nice work" : `feedings logged ${isToday ? "today" : "this day"}`}</small><div class="slot-pills">${Array.from({length:6},(_,i)=>`<span class="slot-pill ${filledSlots.has(i+1)?"filled":""}">${i+1}</span>`).join("")}</div></article>
+      <article class="card stat-card"><span class="label">${isToday ? "Today" : "Day"} total</span><strong>${fmtNum(totals.cal)} kcal</strong><small>${entries.length} ${entries.length===1?"entry":"entries"} logged</small></article>
       <article class="card stat-card"><span class="label">Macros</span><strong>${hasMacros ? `${fmtNum(totals.p)}P · ${fmtNum(totals.c)}C · ${fmtNum(totals.f)}F` : "—"}</strong><small>${hasMacros ? "Grams of protein · carbs · fat" : "Add macros to any meal to track them"}</small></article>
     </section>
-    <section class="section"><form class="card" id="food-form"><p class="eyebrow">Log a meal</p><div class="form-grid"><label>Meal<input name="name" placeholder="e.g. Chicken rice bowl" maxlength="120" required></label><label>Calories (kcal)<input name="calories" type="number" inputmode="numeric" min="0" max="10000" step="1" required></label><div class="macro-columns"><label>Protein (g)<input name="protein" type="number" inputmode="decimal" min="0" max="1000" step="any"></label><label>Carbs (g)<input name="carbs" type="number" inputmode="decimal" min="0" max="1000" step="any"></label><label>Fat (g)<input name="fat" type="number" inputmode="decimal" min="0" max="1000" step="any"></label></div></div><div class="modal-actions"><button class="btn primary" type="submit">Add meal</button></div></form></section>
-    <section class="section"><div class="stack">${entries.length ? entries.map(e=>`<article class="card compact food-row"><div><strong>${esc(e.name)}</strong><div class="caption">${[e.protein!=null?`P ${fmtNum(e.protein,1)}g`:null, e.carbs!=null?`C ${fmtNum(e.carbs,1)}g`:null, e.fat!=null?`F ${fmtNum(e.fat,1)}g`:null].filter(Boolean).join(" · ") || "No macros logged"}</div></div><div class="food-row-right"><span class="metric">${fmtNum(e.calories)}</span><button class="mini-btn danger-text" data-remove-food="${esc(e.id)}">Remove</button></div></article>`).join("") : `<div class="card empty">No meals logged for this day yet.</div>`}</div></section>
+    <section class="section"><form class="card" id="food-form"><p class="eyebrow">Log a meal</p><div class="form-grid"><label>Meal<input name="name" placeholder="e.g. Chicken rice bowl" maxlength="120" required></label><div class="split-columns"><label>Meal slot<select name="slot">${Array.from({length:6},(_,i)=>`<option value="${i+1}" ${i+1===nextSlot?"selected":""}>Meal ${i+1}${filledSlots.has(i+1)?" ·":""}</option>`).join("")}<option value="">Snack / no slot</option></select></label><label>Time<input name="time" type="time" value="${isToday ? new Date().toTimeString().slice(0,5) : ""}"></label></div><label>Calories (kcal)<input name="calories" type="number" inputmode="numeric" min="0" max="10000" step="1" required></label><div class="macro-columns"><label>Protein (g)<input name="protein" type="number" inputmode="decimal" min="0" max="1000" step="any"></label><label>Carbs (g)<input name="carbs" type="number" inputmode="decimal" min="0" max="1000" step="any"></label><label>Fat (g)<input name="fat" type="number" inputmode="decimal" min="0" max="1000" step="any"></label></div>${isSupabaseConfigured ? `<label class="photo-field">Photo (optional)<input name="photo" type="file" accept="image/*"></label>` : `<p class="caption">Meal photos need a signed-in account with cloud sync.</p>`}</div><div class="modal-actions"><button class="btn primary" type="submit">Add meal</button></div></form></section>
+    <section class="section"><div class="stack">${entries.length ? entries.slice().sort((a,b)=>(a.slot||99)-(b.slot||99)||String(a.time||"").localeCompare(String(b.time||""))).map(e=>`<article class="card compact food-row">${e.photoPath?`<img class="food-thumb" data-meal-photo="${esc(e.photoPath)}" alt="Photo of ${esc(e.name)}">`:""}<div><strong>${esc(e.name)}</strong><div class="caption">${[e.slot?`Meal ${e.slot}`:"Snack", e.time||null, [e.protein!=null?`P ${fmtNum(e.protein,1)}g`:null, e.carbs!=null?`C ${fmtNum(e.carbs,1)}g`:null, e.fat!=null?`F ${fmtNum(e.fat,1)}g`:null].filter(Boolean).join(" ") || null].filter(Boolean).join(" · ")}</div></div><div class="food-row-right"><span class="metric">${fmtNum(e.calories)}</span><button class="mini-btn danger-text" data-remove-food="${esc(e.id)}">Remove</button></div></article>`).join("") : `<div class="card empty">No meals logged for this day yet.</div>`}</div></section>
     <section class="section"><article class="card stat-card chart-card"><span class="label">Last 7 days</span><strong>${fmtNum(weekTotal)} kcal</strong><small>Daily calorie totals ending today</small>${weekTotal ? lineChart(linePoints(series)) : `<p class="caption chart-empty">Log meals to build your calorie trend.</p>`}</article></section>
   </main>`, "food");
 }
@@ -746,7 +779,7 @@ function render() {
   if (isSupabaseConfigured && !state.session) { renderAuth(); return; }
   if (state.view === "workout") app.innerHTML = renderWorkout();
   else if (state.view === "logbook") app.innerHTML = renderLogbook();
-  else if (state.view === "food") app.innerHTML = renderFood();
+  else if (state.view === "food") { app.innerHTML = renderFood(); hydrateMealPhotos(); }
   else if (state.view === "progress") app.innerHTML = renderProgress();
   else if (state.view === "profile") app.innerHTML = renderProfile();
   else app.innerHTML = renderHome();
@@ -886,6 +919,7 @@ app.addEventListener("click", async event => {
     if (!confirm(`Remove ${entry.name}?`)) return;
     try {
       if (isSupabaseConfigured) await deleteFoodLog(entry.id);
+      if (isSupabaseConfigured && entry.photoPath) deleteMealPhoto(entry.photoPath).catch(() => {});
       state.food = state.food.filter(e => e.id !== entry.id);
       persist(); render(); showToast("Meal removed");
     } catch (error) { showToast(error.message || "Meal could not be removed"); }
@@ -1009,14 +1043,28 @@ app.addEventListener("submit", async event => {
     const calories = Math.round(Number(data.get("calories")));
     if (!name || !Number.isFinite(calories) || calories < 0 || calories > 10000) { showToast("Enter a meal name and calories from 0 to 10,000."); return; }
     const macro = key => { const raw = data.get(key); const value = Number(raw); return raw !== "" && Number.isFinite(value) && value >= 0 ? Math.round(Math.min(value, 1000) * 10) / 10 : null; };
-    const entry = { id: uuid(), date: state.foodDate, name, calories, protein: macro("protein"), carbs: macro("carbs"), fat: macro("fat") };
+    const slotRaw = data.get("slot");
+    const entry = {
+      id: uuid(), date: state.foodDate, name, calories,
+      protein: macro("protein"), carbs: macro("carbs"), fat: macro("fat"),
+      slot: slotRaw ? Number(slotRaw) : null,
+      time: data.get("time") || null,
+      photoPath: null,
+    };
+    const submit = event.target.querySelector('button[type="submit"]');
+    submit.disabled = true;
     try {
+      const photo = event.target.querySelector('[name="photo"]')?.files?.[0];
+      if (photo && isSupabaseConfigured) {
+        const blob = await compressMealPhoto(photo);
+        entry.photoPath = await uploadMealPhoto(remoteUserId(), entry.id, blob);
+      }
       if (isSupabaseConfigured) await insertFoodLog(remoteUserId(), entry);
       state.food.push(entry);
       persist();
       render();
       showToast(isSupabaseConfigured ? "Meal logged and synced" : "Meal logged");
-    } catch (error) { showToast(error.message || "Meal could not be saved"); }
+    } catch (error) { submit.disabled = false; showToast(error.message || "Meal could not be saved"); }
     return;
   }
   if (event.target.id === "history-edit-form") {
