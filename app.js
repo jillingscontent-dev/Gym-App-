@@ -562,10 +562,13 @@ function renderHistoryCard(h) {
   return `<article class="card history-card" data-history="${esc(h.id)}" role="button" tabindex="0" aria-label="Open ${esc(h.workout)} workout from ${fmtDate(h.date)}"><p class="eyebrow">${fmtDate(h.date)}</p><h3>${esc(h.workout)} · Hybrid Session</h3><div class="meta-row"><span class="meta">${icon("clock")} ${h.duration} min</span><span class="meta">${icon("dumbbell")} ${weightLabel(h.volume)}</span></div><div class="history-tags">${(h.muscles||[]).map(m=>`<span>${esc(m)}</span>`).join("")}</div></article>`;
 }
 
-function linePoints(values, width=520, height=130) {
+function linePoints(values, width=520, height=130, zeroBase=true) {
   if (!values.length) return "";
-  const max = Math.max(...values, 1), min = Math.min(...values, 0), spread = max-min || 1;
+  const max = Math.max(...values, zeroBase ? 1 : -Infinity), min = zeroBase ? Math.min(...values, 0) : Math.min(...values), spread = max-min || 1;
   return values.map((v,i)=>`${20 + i * ((width-40)/Math.max(1,values.length-1))},${height-15-((v-min)/spread)*(height-35)}`).join(" ");
+}
+function lineChart(pts) {
+  return `<svg class="line-chart" viewBox="0 0 520 130" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--bamboo)" stroke-width="3" vector-effect="non-scaling-stroke"/>${pts.split(" ").filter(Boolean).map(p=>{const [x,y]=p.split(",");return `<circle cx="${x}" cy="${y}" r="4"/>`}).join("")}</svg>`;
 }
 function renderProgress() {
   const windowDays = state.period === "week" ? 7 : state.period === "month" ? 30 : 365;
@@ -575,10 +578,15 @@ function renderProgress() {
   const total = values.reduce((a,b)=>a+b,0);
   const best = Math.max(...values,0);
   const records = getRecords();
-  const pts = linePoints(values);
+  const weights = ordered.filter(h=>h.bodyWeight).map(h=>h.bodyWeight);
+  const latestWeight = weights.length ? weights[weights.length-1] : state.settings.bodyWeight;
+  const weightDelta = unitWeight(weights.length > 1 ? weights[weights.length-1]-weights[0] : 0);
+  const weightNote = weights.length > 1
+    ? `${weightDelta >= 0 ? "+" : "−"}${fmtNum(Math.abs(weightDelta),1)} ${state.settings.units} across ${weights.length} check-ins this ${state.period}`
+    : weights.length === 1 ? `1 check-in this ${state.period}` : `Logged when you start a workout`;
   return shell(`<main class="page"><div class="section-head progress-head"><h1 class="page-title">Performance</h1><div class="segmented">${["week","month","year"].map(p=>`<button class="${state.period===p?"active":""}" data-period="${p}">${p[0].toUpperCase()+p.slice(1)}</button>`).join("")}</div></div>
-    <section class="stats-grid"><article class="card stat-card chart-card"><span class="label">Training volume</span><strong>${weightLabel(total)}</strong><small>Across ${ordered.length} sessions in this ${state.period}</small><svg class="line-chart" viewBox="0 0 520 130" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--bamboo)" stroke-width="3" vector-effect="non-scaling-stroke"/>${pts.split(" ").filter(Boolean).map(p=>{const [x,y]=p.split(",");return `<circle cx="${x}" cy="${y}" r="4"/>`}).join("")}</svg></article>
-      <article class="card stat-card"><span class="label">Body weight</span><strong>${weightLabel(state.settings.bodyWeight)}</strong><small>Current</small></article>
+    <section class="stats-grid"><article class="card stat-card chart-card"><span class="label">Training volume</span><strong>${weightLabel(total)}</strong><small>Across ${ordered.length} sessions in this ${state.period}</small>${lineChart(linePoints(values))}</article>
+      <article class="card stat-card chart-card"><span class="label">Body weight</span><strong>${weightLabel(latestWeight)}</strong><small>${weightNote}</small>${weights.length ? lineChart(linePoints(weights, 520, 130, false)) : `<p class="caption chart-empty">Add your body weight when starting a workout to build this trend.</p>`}</article>
       <article class="card stat-card"><span class="label">Best session</span><strong>${weightLabel(best)}</strong><small>Volume</small></article></section>
     <section class="section"><div class="section-head"><h2 class="section-title">Personal Records</h2><span class="caption">Estimated 1RM</span></div><div class="stack">${records.length?records.map(r=>`<article class="card compact record-row"><span class="record-icon">${icon("dumbbell")}</span><div><strong>${esc(r.name)}</strong><div class="caption">${fmtNum(r.weight,1)} ${state.settings.units} × ${r.reps} reps</div></div><div class="metric">${fmtNum(r.e1rm,1)}</div></article>`).join(""):`<div class="card empty">Complete weighted sets to build your records.</div>`}</div></section>
   </main>`, "progress");
