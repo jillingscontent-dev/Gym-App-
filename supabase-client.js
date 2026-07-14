@@ -292,6 +292,54 @@ export async function cancelRemoteWorkout(sessionId) {
   fail(error);
 }
 
+export async function loadProgressPhotos(userId) {
+  const { data, error } = await supabase
+    .from("progress_photos")
+    .select("id, session_id, taken_on, photo_path")
+    .eq("user_id", userId)
+    .order("taken_on", { ascending: false })
+    .order("created_at", { ascending: false });
+  fail(error);
+  return data || [];
+}
+
+export async function insertProgressPhoto(userId, photo) {
+  const { error } = await supabase.from("progress_photos").insert({
+    id: photo.id,
+    user_id: userId,
+    session_id: photo.sessionId,
+    taken_on: photo.date,
+    photo_path: photo.photoPath,
+  });
+  fail(error);
+}
+
+export async function deleteProgressPhotoRow(photoId) {
+  const { error } = await supabase.from("progress_photos").delete().eq("id", photoId);
+  fail(error);
+}
+
+export async function uploadProgressPhotoFile(userId, photoId, blob) {
+  const path = `${userId}/${photoId}.jpg`;
+  const { error } = await supabase.storage.from("progress-photos").upload(path, blob, {
+    contentType: blob.type || "image/jpeg",
+    upsert: true,
+  });
+  fail(error);
+  return path;
+}
+
+export async function getProgressPhotoUrl(path) {
+  const { data, error } = await supabase.storage.from("progress-photos").createSignedUrl(path, 3600);
+  fail(error);
+  return data.signedUrl;
+}
+
+export async function removeProgressPhotoFile(path) {
+  const { error } = await supabase.storage.from("progress-photos").remove([path]);
+  fail(error);
+}
+
 export async function deleteWorkoutSession(sessionId, userId) {
   const { data, error } = await supabase
     .from("workout_sessions")

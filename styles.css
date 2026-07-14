@@ -268,6 +268,10 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .line-chart circle { fill: var(--bamboo-dark); }
 .chart-empty { margin-top: 22px; }
 .photo-field input[type="file"] { border: 1px dashed var(--line); border-radius: 9px; padding: 11px 12px; background: white; font-size: 13px; color: var(--muted); height: auto; }
+.photo-strip { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+.photo-tile-btn { border: 0; background: transparent; padding: 0; cursor: pointer; display: grid; gap: 6px; justify-items: center; flex-shrink: 0; }
+.photo-tile { width: 112px; height: 148px; border-radius: 12px; object-fit: cover; background: var(--surface-2); border: 1px solid var(--line); display: block; }
+.photo-full { width: 100%; max-height: 60vh; object-fit: contain; border-radius: 12px; background: var(--surface-2); }
 .record-row { display: grid; grid-template-columns: 48px 1fr auto; gap: 14px; align-items: center; }
 .record-icon { width: 48px; height: 48px; border-radius: 11px; display: grid; place-items: center; background: var(--surface-2); color: var(--bamboo-dark); }
 

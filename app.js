@@ -24,6 +24,12 @@ import {
   updateWorkoutSessionDetails,
   cancelRemoteWorkout,
   deleteWorkoutSession,
+  loadProgressPhotos,
+  insertProgressPhoto,
+  deleteProgressPhotoRow,
+  uploadProgressPhotoFile,
+  getProgressPhotoUrl,
+  removeProgressPhotoFile,
 } from "./supabase-client.js";
 import { isMissingProgramSchemaError } from "./program-schema-error.js";
 import { REST_PRESETS, RestTimer, completeSetAndMaybeStartTimer, formatRestTime, validateRestDuration } from "./rest-timer.js";
@@ -185,6 +191,11 @@ const state = {
   settings: { ...defaultSettings, ...(saved?.settings || {}) },
   history: isSupabaseConfigured ? [] : (saved?.history?.length ? saved.history : seedHistory),
   active: isSupabaseConfigured ? null : (saved?.active || null),
+  progressPhotos: [],
+  progressPhotosLoaded: false,
+  progressPhotoError: null,
+  pendingPhotoSession: null,
+  selectedPhotoId: null,
 };
 
 const restTimer = new RestTimer();
@@ -325,9 +336,49 @@ function applyRemoteProgram(program) {
   }
 }
 
+async function compressPhoto(file, maxDim = 1280) {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.82));
+    return blob || file;
+  } catch { return file; }
+}
+
+const progressPhotoUrls = new Map();
+function hydrateProgressPhotos() {
+  if (!isSupabaseConfigured) return;
+  document.querySelectorAll("[data-progress-photo]").forEach(img => {
+    const path = img.dataset.progressPhoto;
+    if (!progressPhotoUrls.has(path)) progressPhotoUrls.set(path, getProgressPhotoUrl(path).catch(() => null));
+    progressPhotoUrls.get(path).then(url => { if (url && img.isConnected) img.src = url; });
+  });
+}
+
+async function ensureProgressPhotosLoaded() {
+  if (state.progressPhotosLoaded || !isSupabaseConfigured || !state.session) return;
+  state.progressPhotosLoaded = true;
+  try {
+    const rows = await loadProgressPhotos(remoteUserId());
+    state.progressPhotos = rows.map(r => ({ id: r.id, sessionId: r.session_id, date: r.taken_on, photoPath: r.photo_path }));
+    state.progressPhotoError = null;
+  } catch (error) {
+    state.progressPhotoError = isMissingProgramSchemaError(error)
+      ? "Run supabase/migrations/005_progress_photos.sql once in the Supabase SQL Editor to enable progress photos."
+      : (error.message || "Progress photos could not be loaded.");
+  }
+  if (state.view === "progress") render();
+}
+
 async function loadRemoteState() {
   const user = state.session.user;
   state.programError = null;
+  state.progressPhotos = []; state.progressPhotosLoaded = false; state.progressPhotoError = null;
   state.programId = null;
   const [profile, sessions] = await Promise.all([loadProfile(user), loadWorkoutData(user.id)]);
   state.settings = {
@@ -375,7 +426,7 @@ async function bootstrap() {
     setTimeout(async () => {
       state.session = session;
       if (session) await loadRemoteState();
-      else { state.history = []; state.active = null; state.programId = null; state.programError = null; state.view = "home"; }
+      else { state.history = []; state.active = null; state.programId = null; state.programError = null; state.progressPhotos = []; state.progressPhotosLoaded = false; state.progressPhotoError = null; state.view = "home"; }
       render();
     }, 0);
   });
@@ -591,6 +642,12 @@ function renderProgress() {
       <article class="card stat-card chart-card"><span class="label">Body weight</span><strong>${weightLabel(latestWeight)}</strong><small>${weightNote}</small>${weights.length ? lineChart(linePoints(weights, 520, 130, false)) : `<p class="caption chart-empty">Add your body weight when starting a workout to build this trend.</p>`}</article>
       <article class="card stat-card"><span class="label">Best session</span><strong>${weightLabel(best)}</strong><small>Volume</small></article></section>
     <section class="section"><div class="section-head"><h2 class="section-title">Personal Records</h2><span class="caption">Estimated 1RM</span></div><div class="stack">${records.length?records.map(r=>`<article class="card compact record-row"><span class="record-icon">${icon("dumbbell")}</span><div><strong>${esc(r.name)}</strong><div class="caption">${fmtNum(r.weight,1)} ${state.settings.units} × ${r.reps} reps</div></div><div class="metric">${fmtNum(r.e1rm,1)}</div></article>`).join(""):`<div class="card empty">Complete weighted sets to build your records.</div>`}</div></section>
+    <section class="section"><div class="section-head"><h2 class="section-title">Progress Photos</h2>${state.progressPhotos.length?`<span class="caption">${state.progressPhotos.length} total</span>`:""}</div>
+      ${!isSupabaseConfigured ? `<div class="card empty">Progress photos need a signed-in account with cloud sync.</div>`
+        : state.progressPhotoError ? `<div class="card empty">${esc(state.progressPhotoError)}</div>`
+        : state.progressPhotos.length ? `<div class="photo-strip">${state.progressPhotos.map(p=>`<button class="photo-tile-btn" data-open-photo="${esc(p.id)}" aria-label="Open progress photo from ${fmtDate(p.date+"T12:00:00")}"><img class="photo-tile" data-progress-photo="${esc(p.photoPath)}" alt=""><span class="caption">${fmtDate(p.date+"T12:00:00", true)}</span></button>`).join("")}</div>`
+        : `<div class="card empty">Finish a workout to add your first progress photo.</div>`}
+    </section>
   </main>`, "progress");
 }
 function getRecords() {
@@ -677,6 +734,14 @@ function renderModal() {
       <div class="stack section">${(h.exercises||[]).map((ex,ei)=>`<div class="card compact"><strong>${esc(ex.name)}</strong><div class="sets-head"><span>Set</span><span>Load (${state.settings.units})</span><span>Reps</span><span></span></div>${(ex.sets||[]).map((s,si)=>`<div class="set-row"><span class="set-num">${si+1}</span><input class="set-input" type="number" inputmode="decimal" min="0" max="5000" step="any" name="weight-${ei}-${si}" value="${Math.round(unitWeight(s.weight)*10)/10}" aria-label="${esc(ex.name)} set ${si+1} load"><input class="set-input" type="number" inputmode="decimal" min="0" max="1000" step="any" name="reps-${ei}-${si}" value="${s.reps}" aria-label="${esc(ex.name)} set ${si+1} reps"><span></span></div>`).join("")}</div>`).join("")}</div>
       <div class="modal-actions"><button type="button" class="btn" data-action="back-to-history">Cancel</button><button class="btn primary" type="submit">Save changes</button></div></form></div>`;
   }
+  if (state.modal === "progress-photo") {
+    return `<div class="modal-backdrop" data-modal-backdrop><form class="modal" id="progress-photo-form" role="dialog" aria-modal="true" aria-labelledby="progress-photo-title"><p class="eyebrow">Session saved</p><h2 id="progress-photo-title">Add a progress photo?</h2><p class="subtle">Capture how you look today and build a timeline, one session at a time.</p><label class="photo-field">Photo<input name="photo" type="file" accept="image/*" required></label><div class="modal-actions"><button type="button" class="btn" data-action="skip-progress-photo">Skip</button><button class="btn primary" type="submit">Save photo</button></div></form></div>`;
+  }
+  if (state.modal === "photo-viewer") {
+    const p = state.progressPhotos.find(x => x.id === state.selectedPhotoId);
+    if (!p) return "";
+    return `<div class="modal-backdrop" data-modal-backdrop><div class="modal" role="dialog" aria-modal="true" aria-label="Progress photo"><div class="section-head"><div><p class="eyebrow">${fmtDate(p.date+"T12:00:00")}</p><h2>Progress photo</h2></div><button class="icon-btn" data-action="close-modal" data-modal-primary-focus aria-label="Close photo">×</button></div><img class="photo-full" data-progress-photo="${esc(p.photoPath)}" alt="Progress photo from ${fmtDate(p.date+"T12:00:00")}"><div class="modal-actions modal-actions-split"><button class="btn danger" data-action="delete-progress-photo">Delete photo</button><button class="btn" data-action="close-modal">Close</button></div></div></div>`;
+  }
   return "";
 }
 
@@ -690,6 +755,7 @@ function render() {
   else if (state.view === "profile") app.innerHTML = renderProfile();
   else app.innerHTML = renderHome();
   updateTimer();
+  hydrateProgressPhotos();
   if (state.modal) requestAnimationFrame(() => document.querySelector("[data-modal-primary-focus]")?.focus());
 }
 function updateTimer() {
@@ -720,7 +786,7 @@ app.addEventListener("click", async event => {
     return;
   }
   const nav = event.target.closest("[data-nav]");
-  if (nav) { state.modal = null; state.selectedWorkoutId = null; state.view = nav.dataset.nav; render(); window.scrollTo({top:0,behavior:"smooth"}); return; }
+  if (nav) { state.modal = null; state.selectedWorkoutId = null; state.view = nav.dataset.nav; if (state.view === "progress") ensureProgressPhotosLoaded(); render(); window.scrollTo({top:0,behavior:"smooth"}); return; }
   const viewDay = event.target.closest("[data-view-day]");
   if (viewDay) { state.previewDay=viewDay.dataset.viewDay; state.modal="day-preview"; render(); return; }
   const start = event.target.closest("[data-start]");
@@ -761,6 +827,21 @@ app.addEventListener("click", async event => {
   if (action === "sign-out") { restTimer.dismiss(); await signOut(); return; }
   if (action === "toggle-auth") { state.authMode = state.authMode === "signin" ? "signup" : "signin"; render(); return; }
   if (action === "reset-data") { if(confirm("Reset all app data and restore the demo history?")){restTimer.dismiss();localStorage.removeItem(STORE);location.reload();} return; }
+  if (action === "skip-progress-photo") { state.pendingPhotoSession = null; closeModal(); return; }
+  if (action === "delete-progress-photo") {
+    const photo = state.progressPhotos.find(x => x.id === state.selectedPhotoId);
+    if (!photo) { closeModal(); return; }
+    if (!confirm("Delete this progress photo? This cannot be undone.")) return;
+    try {
+      await deleteProgressPhotoRow(photo.id);
+      removeProgressPhotoFile(photo.photoPath).catch(() => {});
+      state.progressPhotos = state.progressPhotos.filter(x => x.id !== photo.id);
+      state.selectedPhotoId = null;
+      closeModal();
+      showToast("Progress photo deleted");
+    } catch (error) { showToast(error.message || "Photo could not be deleted"); }
+    return;
+  }
   if (action === "edit-workout") { state.modal = "history-edit"; render(); return; }
   if (action === "back-to-history") { state.modal = "history"; render(); return; }
   if (action === "delete-workout") {
@@ -810,6 +891,8 @@ app.addEventListener("click", async event => {
   if (add) { const exercise=state.active.exercises[Number(add.dataset.addSet)]; const set={id:uuid(),setNumber:exercise.sets.length+1,weight:"",reps:"",done:false}; exercise.sets.push(set); persist(); if(isSupabaseConfigured) await insertRemoteSet(exercise.id,remoteUserId(),set); render(); return; }
   const period = event.target.closest("[data-period]");
   if (period) { state.period=period.dataset.period; render(); return; }
+  const openPhoto = event.target.closest("[data-open-photo]");
+  if (openPhoto) { state.selectedPhotoId = openPhoto.dataset.openPhoto; openModal("photo-viewer", `[data-open-photo="${openPhoto.dataset.openPhoto}"]`); return; }
   const history = event.target.closest("[data-history]");
   if (history) { openHistoryModal(history.dataset.history); return; }
   const editDay = event.target.closest("[data-edit-day]");
@@ -921,6 +1004,30 @@ app.addEventListener("submit", async event => {
     } catch(error) { showToast(error.message||"Exercise could not be saved"); }
     return;
   }
+  if (event.target.id === "progress-photo-form") {
+    event.preventDefault();
+    const file = event.target.querySelector('[name="photo"]').files?.[0];
+    if (!file) { showToast("Choose a photo first."); return; }
+    const submit = event.target.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    const photo = { id: uuid(), sessionId: state.pendingPhotoSession?.id || null, date: localDate(new Date()), photoPath: null };
+    try {
+      const blob = await compressPhoto(file);
+      photo.photoPath = await uploadProgressPhotoFile(remoteUserId(), photo.id, blob);
+      await insertProgressPhoto(remoteUserId(), photo);
+      state.progressPhotos.unshift(photo);
+      state.pendingPhotoSession = null;
+      state.modal = null;
+      render();
+      showToast("Progress photo saved");
+    } catch (error) {
+      submit.disabled = false;
+      showToast(isMissingProgramSchemaError(error)
+        ? "Progress photo setup is missing. Run supabase/migrations/005_progress_photos.sql once in the Supabase SQL Editor."
+        : (error.message || "Photo could not be saved"));
+    }
+    return;
+  }
   if (event.target.id === "history-edit-form") {
     event.preventDefault();
     const h = state.history.find(x=>x.id===state.selectedWorkoutId);
@@ -1002,7 +1109,10 @@ async function finishWorkout() {
     return;
   }
   state.history.push({id:active.id,workout:active.workout,date:new Date().toISOString(),duration,volume,bodyWeight:active.bodyWeight,muscles:WORKOUTS[active.workout].muscles,exercises});
-  state.active=null; state.workoutSaveStatus="idle"; state.view="logbook"; persist(); render(); showToast(isSupabaseConfigured ? "Workout saved and synced" : "Workout saved");
+  const finishedSessionId = active.id;
+  state.active=null; state.workoutSaveStatus="idle"; state.view="logbook"; persist();
+  if (isSupabaseConfigured) { state.pendingPhotoSession = { id: finishedSessionId }; state.modal = "progress-photo"; }
+  render(); showToast(isSupabaseConfigured ? "Workout saved and synced" : "Workout saved");
 }
 function exportData() {
   const blob = new Blob([JSON.stringify({exportedAt:new Date().toISOString(),settings:state.settings,history:state.history},null,2)],{type:"application/json"});
