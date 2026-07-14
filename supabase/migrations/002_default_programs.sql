@@ -96,7 +96,7 @@ begin
   insert into public.program_days (program_id,user_id,day_key,position,title,focus,duration_label)
   values (program_uuid,target_user,'Push',1,'Push','Chest, shoulders, triceps, rotational power and loaded trunk stability','70–85 min') returning id into day_uuid;
   insert into public.program_exercises (program_day_id,user_id,position,phase,exercise_name,target_sets,target_reps,rest_interval,cue) values
-  (day_uuid,target_user,1,'Power','Rotational medicine-ball throw',3,'3–5 / side','60–90 sec','Stop if speed drops; crisp throws.'),
+  (day_uuid,target_user,1,'Power','Rotational medicine-ball floor slam',3,'3–5 / side','60–90 sec','Rotate through the hips; slam hard outside the front foot.'),
   (day_uuid,target_user,2,'Power','Plyometric push-up',3,'3–5','60–90 sec','Use an elevated surface if needed.'),
   (day_uuid,target_user,3,'Hypertrophy','Seated chest press',2,'8–12','2–3 min','Controlled lowering.'),
   (day_uuid,target_user,4,'Hypertrophy','Incline barbell press',2,'8–12','2–3 min','Leave 1–3 reps in reserve.'),
@@ -139,7 +139,7 @@ begin
   insert into public.program_days (program_id,user_id,day_key,position,title,focus,duration_label)
   values (program_uuid,target_user,'Upper',4,'Upper','Balanced upper-body volume, rotation, pressing power and front-loaded carries','80–95 min') returning id into day_uuid;
   insert into public.program_exercises (program_day_id,user_id,position,phase,exercise_name,target_sets,target_reps,rest_interval,cue) values
-  (day_uuid,target_user,1,'Power','Rotational medicine-ball scoop toss',3,'3–5 / side','60–90 sec','Rotate through hips and trunk.'),
+  (day_uuid,target_user,1,'Power','Explosive low-to-high cable woodchop',3,'3–5 / side','60–90 sec','Drive the rotation from the hips; fast up, controlled return.'),
   (day_uuid,target_user,2,'Power','Half-kneeling landmine push press',3,'4–6 / side','90–120 sec','Drive fast; reset each rep.'),
   (day_uuid,target_user,3,'Hypertrophy','Pull-up or chin-up',2,'6–10','2–3 min',''),
   (day_uuid,target_user,4,'Hypertrophy','Incline dumbbell bench press',2,'8–12','2–3 min',''),

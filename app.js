@@ -40,7 +40,7 @@ const WORKOUTS = {
     duration: "70–85 min",
     muscles: ["Chest", "Shoulders", "Triceps", "Core"],
     exercises: [
-      ["Power", "Rotational medicine-ball throw", 3, "3–5 / side", "60–90 sec", "Stop if speed drops; crisp throws."],
+      ["Power", "Rotational medicine-ball floor slam", 3, "3–5 / side", "60–90 sec", "Rotate through the hips; slam hard outside the front foot."],
       ["Power", "Plyometric push-up", 3, "3–5", "60–90 sec", "Use an elevated surface if needed."],
       ["Hypertrophy", "Seated chest press", 2, "8–12", "2–3 min", "Controlled lowering."],
       ["Hypertrophy", "Incline barbell press", 2, "8–12", "2–3 min", "Leave 1–3 reps in reserve."],
@@ -92,7 +92,7 @@ const WORKOUTS = {
     duration: "80–95 min",
     muscles: ["Chest", "Back", "Shoulders", "Core"],
     exercises: [
-      ["Power", "Rotational medicine-ball scoop toss", 3, "3–5 / side", "60–90 sec", "Rotate through hips and trunk."],
+      ["Power", "Explosive low-to-high cable woodchop", 3, "3–5 / side", "60–90 sec", "Drive the rotation from the hips; fast up, controlled return."],
       ["Power", "Half-kneeling landmine push press", 3, "4–6 / side", "90–120 sec", "Drive fast; reset each rep."],
       ["Hypertrophy", "Pull-up or chin-up", 2, "6–10", "2–3 min", ""],
       ["Hypertrophy", "Incline dumbbell bench press", 2, "8–12", "2–3 min", ""],
