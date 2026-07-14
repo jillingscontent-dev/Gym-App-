@@ -292,60 +292,6 @@ export async function cancelRemoteWorkout(sessionId) {
   fail(error);
 }
 
-export async function loadFoodLogs(userId) {
-  const { data, error } = await supabase
-    .from("food_logs")
-    .select("id, eaten_on, name, calories, protein_g, carbs_g, fat_g, meal_slot, eaten_time, photo_path")
-    .eq("user_id", userId)
-    .order("eaten_on", { ascending: true })
-    .order("created_at", { ascending: true });
-  fail(error);
-  return data || [];
-}
-
-export async function insertFoodLog(userId, entry) {
-  const { error } = await supabase.from("food_logs").insert({
-    id: entry.id,
-    user_id: userId,
-    eaten_on: entry.date,
-    name: entry.name,
-    calories: entry.calories,
-    protein_g: entry.protein,
-    carbs_g: entry.carbs,
-    fat_g: entry.fat,
-    meal_slot: entry.slot,
-    eaten_time: entry.time,
-    photo_path: entry.photoPath,
-  });
-  fail(error);
-}
-
-export async function deleteFoodLog(entryId) {
-  const { error } = await supabase.from("food_logs").delete().eq("id", entryId);
-  fail(error);
-}
-
-export async function uploadMealPhoto(userId, entryId, blob) {
-  const path = `${userId}/${entryId}.jpg`;
-  const { error } = await supabase.storage.from("meal-photos").upload(path, blob, {
-    contentType: blob.type || "image/jpeg",
-    upsert: true,
-  });
-  fail(error);
-  return path;
-}
-
-export async function getMealPhotoUrl(path) {
-  const { data, error } = await supabase.storage.from("meal-photos").createSignedUrl(path, 3600);
-  fail(error);
-  return data.signedUrl;
-}
-
-export async function deleteMealPhoto(path) {
-  const { error } = await supabase.storage.from("meal-photos").remove([path]);
-  fail(error);
-}
-
 export async function deleteWorkoutSession(sessionId, userId) {
   const { data, error } = await supabase
     .from("workout_sessions")
