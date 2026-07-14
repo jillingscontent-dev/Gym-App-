@@ -63,6 +63,6 @@ With Supabase configured, accounts, profiles, routines, active workouts, exercis
 
 ## Install on iPhone
 
-The web app manifest and Apple metadata are included. Before production deployment, add the three PNG files listed in `icons/README.md`. A service worker is intentionally not registered: the app remains online-first so stale cached code cannot interfere with Supabase workout syncing.
+The web app manifest and Apple metadata are included. Before production deployment, add the three PNG files listed in `icons/README.md`. A notification-only service worker is registered for rest-timer alerts. It has no fetch handler, so the app remains online-first and stale cached code cannot interfere with Supabase workout syncing.
 
 On the deployed HTTPS site in Safari, tap **Share → Add to Home Screen → Add**.

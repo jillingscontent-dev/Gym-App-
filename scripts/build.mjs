@@ -49,7 +49,7 @@ for (const [filename, expectedWidth, expectedHeight] of requiredIcons) {
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
 
-for (const filename of ["index.html", "styles.css", "app.js", "supabase-client.js", "program-schema-error.js", "rest-timer.js", "manifest.webmanifest"]) {
+for (const filename of ["index.html", "styles.css", "app.js", "supabase-client.js", "program-schema-error.js", "rest-timer.js", "manifest.webmanifest", "sw.js"]) {
   await cp(path.join(root, filename), path.join(output, filename));
 }
 await cp(path.join(root, "icons"), path.join(output, "icons"), { recursive: true });

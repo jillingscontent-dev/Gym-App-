@@ -209,6 +209,7 @@ function persist() {
 function localDate(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`; }
 
 function primeRestAudio() {
+  requestRestNotificationPermission();
   if (!state.settings.restTimerAlerts || restAudioContext) return;
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   if (!AudioContext) return;
@@ -216,6 +217,28 @@ function primeRestAudio() {
     restAudioContext = new AudioContext();
     restAudioContext.resume?.().catch(() => {});
   } catch { restAudioContext = null; }
+}
+
+function requestRestNotificationPermission() {
+  if (!("Notification" in window) || Notification.permission !== "default") return;
+  Notification.requestPermission().catch(() => {});
+}
+
+function showRestNotification() {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  navigator.serviceWorker?.ready.then(registration => registration.showNotification("Rest complete", {
+    body: "Ready for your next set.",
+    tag: "rest-timer",
+    icon: "icons/icon-192.png",
+    badge: "icons/icon-192.png",
+    vibrate: [200, 100, 200],
+  })).catch(() => {});
+}
+
+function clearRestNotification() {
+  navigator.serviceWorker?.ready.then(registration =>
+    registration.getNotifications({ tag: "rest-timer" }).then(notifications => notifications.forEach(n => n.close()))
+  ).catch(() => {});
 }
 
 function playRestAlert() {
@@ -237,6 +260,7 @@ function playRestAlert() {
 
 function handleRestTimerComplete() {
   playRestAlert();
+  if (document.hidden) showRestNotification();
   showToast("Rest complete — ready for your next set");
   render();
 }
@@ -810,8 +834,8 @@ app.addEventListener("click", async event => {
   if (action === "pause-rest-timer") { restTimer.pause(); render(); return; }
   if (action === "resume-rest-timer") { primeRestAudio(); restTimer.resume(); render(); return; }
   if (action === "add-rest-time") { restTimer.add(30); render(); return; }
-  if (action === "restart-rest-timer") { primeRestAudio(); restTimer.restart(); render(); return; }
-  if (action === "dismiss-rest-timer") { restTimer.dismiss(); if(state.modal==="rest-timer")closeModal();else render(); return; }
+  if (action === "restart-rest-timer") { primeRestAudio(); clearRestNotification(); restTimer.restart(); render(); return; }
+  if (action === "dismiss-rest-timer") { restTimer.dismiss(); clearRestNotification(); if(state.modal==="rest-timer")closeModal();else render(); return; }
   if (action === "edit-program") { if(state.programError){showToast(state.programError);return;} state.modal="program-editor"; render(); return; }
   if (action === "add-program-exercise") { state.exerciseEditor={scope:"program",mode:"add",day:state.editDay}; state.modal="exercise-editor"; render(); return; }
   if (action === "add-active-exercise") { state.exerciseEditor={scope:"active",mode:"add"}; state.modal="exercise-editor"; render(); return; }
@@ -1120,4 +1144,5 @@ function exportData() {
   a.href=url; a.download="train-logbook-backup.json"; a.click(); URL.revokeObjectURL(url); showToast("Data exported");
 }
 
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 bootstrap();
